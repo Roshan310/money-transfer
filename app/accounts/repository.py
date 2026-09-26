@@ -1,6 +1,7 @@
 from decimal import Decimal
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.accounts.models import Account
@@ -15,3 +16,20 @@ def insert_account(session: Session, owner_name: str, balance: Decimal) -> Accou
 
 def get_account(session: Session, account_id: UUID) -> Account | None:
     return session.get(Account, account_id)
+
+
+def lock_accounts(
+    session: Session, account_ids: tuple[UUID, UUID]
+) -> dict[UUID, Account]:
+    accounts = {}
+    # Every transfer acquires locks in the same order, including reverse transfers.
+    for account_id in sorted(account_ids):
+        account = session.scalar(
+            select(Account)
+            .where(Account.id == account_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if account is not None:
+            accounts[account_id] = account
+    return accounts
