@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Header, HTTPException, status
 
 from app.database import SessionDep
+from app.errors import ErrorResponse
 from app.transfers import service
 from app.transfers.errors import TransferAccountNotFoundError, TransferConflictError
 from app.transfers.schemas import TransferCreate, TransferRead
@@ -18,9 +19,20 @@ IdempotencyKey = Annotated[
     "",
     status_code=status.HTTP_201_CREATED,
     responses={
-        404: {"description": "Source or destination account not found"},
-        409: {"description": "Transfer or idempotency conflict"},
+        404: {
+            "model": ErrorResponse,
+            "description": "Source or destination account not found",
+        },
+        409: {
+            "model": ErrorResponse,
+            "description": "Transfer or idempotency conflict",
+        },
     },
+    description=(
+        "Requires an Idempotency-Key. Successful retries with equivalent payloads "
+        "return the original transfer without moving money again. Failed requests "
+        "do not reserve their keys. Amounts must be positive decimal strings."
+    ),
 )
 def create_transfer(
     data: TransferCreate, session: SessionDep, idempotency_key: IdempotencyKey

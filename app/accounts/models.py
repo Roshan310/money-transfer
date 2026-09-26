@@ -12,6 +12,9 @@ class Account(Base):
     __tablename__ = "accounts"
     __table_args__ = (
         CheckConstraint("balance >= 0", name="ck_accounts_balance_nonnegative"),
+        CheckConstraint(
+            "balance <= 9999999999999999.99", name="ck_accounts_balance_upper_bound"
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)

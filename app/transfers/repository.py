@@ -1,7 +1,7 @@
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -10,6 +10,24 @@ from app.transfers.models import Transfer
 
 def get_by_idempotency_key(session: Session, key: str) -> Transfer | None:
     return session.scalar(select(Transfer).where(Transfer.idempotency_key == key))
+
+
+def get_account_history(
+    session: Session, account_id: UUID, *, limit: int, offset: int
+) -> list[Transfer]:
+    statement = (
+        select(Transfer)
+        .where(
+            or_(
+                Transfer.source_account_id == account_id,
+                Transfer.destination_account_id == account_id,
+            )
+        )
+        .order_by(Transfer.created_at.desc(), Transfer.id.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    return list(session.scalars(statement))
 
 
 def insert_transfer(

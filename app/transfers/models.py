@@ -6,6 +6,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     Numeric,
     String,
     UniqueConstraint,
@@ -19,6 +20,13 @@ from app.database import Base
 class Transfer(Base):
     __tablename__ = "transfers"
     __table_args__ = (
+        Index("ix_transfers_source_history", "source_account_id", "created_at", "id"),
+        Index(
+            "ix_transfers_destination_history",
+            "destination_account_id",
+            "created_at",
+            "id",
+        ),
         UniqueConstraint("idempotency_key", name="uq_transfers_idempotency_key"),
         CheckConstraint(
             "amount > 0 AND amount <= 9999999999999999.99",

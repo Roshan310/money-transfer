@@ -1,6 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import (
@@ -11,6 +11,7 @@ from pydantic import (
 )
 
 from app.money import NonnegativeMoney, format_money
+from app.transfers.schemas import TransferRead
 
 
 class AccountCreate(BaseModel):
@@ -33,3 +34,14 @@ class AccountRead(BaseModel):
     @field_serializer("balance", when_used="json")
     def serialize_balance(self, value: Decimal) -> str:
         return format_money(value)
+
+
+class AccountTransactionRead(TransferRead):
+    direction: Literal["debit", "credit"]
+
+
+class AccountTransactionPage(BaseModel):
+    items: list[AccountTransactionRead]
+    limit: int
+    offset: int
+    has_more: bool

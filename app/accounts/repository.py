@@ -18,6 +18,9 @@ def get_account(session: Session, account_id: UUID) -> Account | None:
     return session.get(Account, account_id)
 
 
+def get_all_accounts(session: Session) -> list[Account]:
+    return session.scalars(select(Account)).all()
+
 def lock_accounts(
     session: Session, account_ids: tuple[UUID, UUID]
 ) -> dict[UUID, Account]:
