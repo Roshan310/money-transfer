@@ -3,6 +3,7 @@ from sqlalchemy import Connection
 
 from app.accounts.models import Account  # noqa: F401
 from app.database import Base, get_engine
+from app.transfers.models import Transfer  # noqa: F401
 
 target_metadata = Base.metadata
 
@@ -31,7 +32,11 @@ def run_migrations_online() -> None:
 
 
 def run_with_connection(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        transaction_per_migration=True,
+    )
     with context.begin_transaction():
         context.run_migrations()
 
