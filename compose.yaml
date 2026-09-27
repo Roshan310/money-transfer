@@ -1,0 +1,63 @@
+name: money-transfer-assignment
+
+services:
+  migrate:
+    build: .
+    image: money-transfer-assignment-api
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://money_transfer:money_transfer@db:5432/money_transfer
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    build: .
+    image: money-transfer-assignment-api
+    environment:
+      DATABASE_URL: postgresql+psycopg://money_transfer:money_transfer@db:5432/money_transfer
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/openapi.json', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: money_transfer
+      POSTGRES_PASSWORD: money_transfer
+      POSTGRES_DB: money_transfer
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U money_transfer -d money_transfer"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+  test-db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: money_transfer
+      POSTGRES_PASSWORD: money_transfer
+      POSTGRES_DB: money_transfer_test
+    ports:
+      - "127.0.0.1:5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U money_transfer -d money_transfer_test"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+volumes:
+  postgres_data:
