@@ -10,6 +10,7 @@ from app.errors import ErrorResponse
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 
+# I implemented this only for the ease of finding account uuids for transfer tests.
 @router.get("", response_model=list[AccountRead])
 def get_all_accounts(session: SessionDep) -> list[AccountRead]:
     accounts = service.get_all_accounts(session)
