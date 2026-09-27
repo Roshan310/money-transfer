@@ -116,6 +116,14 @@ def test_database_rejects_negative_balance(session: Session) -> None:
     session.rollback()
 
 
+def test_database_rejects_nan_balance(session: Session) -> None:
+    session.add(Account(owner_name="Alice", balance=Decimal("NaN")))
+    with pytest.raises(IntegrityError) as error:
+        session.flush()
+    assert error.value.orig.diag.constraint_name == "ck_accounts_balance_upper_bound"
+    session.rollback()
+
+
 def test_failed_creation_rolls_back_and_session_remains_usable(
     session: Session,
 ) -> None:
