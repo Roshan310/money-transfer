@@ -1,256 +1,153 @@
 # Money Transfer System
 
-An API-only backend assignment using FastAPI, SQLAlchemy, PostgreSQL, Alembic,
-and pytest. Account creation, lookup, atomic idempotent transfers, and paginated
-transaction history are implemented.
+> [!WARNING]
+> This part of repository (README.md) is a pure human slop. I have tried my best to make it as clean and readable as possible
 
-## Run locally
 
-Requires [uv](https://docs.astral.sh/uv/) and Docker with Docker Compose.
-Compose credentials are for local development only.
-Python dependencies live in this project's `.venv`. Compose uses the dedicated
-`money-transfer-assignment` project, with development PostgreSQL on port 5433 and
-test PostgreSQL on port 5434; it does not use the system PostgreSQL instance.
+This is a API only, money transfer system, which allows creation of accounts and transfer money (virtual) among those accounts.
 
-```bash
-uv sync
-cp .env.example .env
-docker compose up -d --wait db test-db
-uv run alembic upgrade head
-uv run fastapi dev
-```
+In between these simple process, lies a good amount of reliability and consistency check. 
 
-The API runs at http://127.0.0.1:8000. Interactive API documentation is at
-http://127.0.0.1:8000/docs; the OpenAPI schema is at `/openapi.json`.
-You can also provide `DATABASE_URL` and `TEST_DATABASE_URL` as environment
-variables instead of using `.env`.
+The main focus is making transfers safe: either both balances change and the
+transfer is recorded, or nothing changes. Retrying a successful request must not
+move money twice.
 
-## Run with Docker
+This is built using Python 3.12, FastAPI, PostgreSQL, SQLAlchemy, Alembic. 
 
-```bash
-docker compose up --build -d --wait api test-db
-```
+## Setup and run
 
-This builds the API with locked Python dependencies, waits for PostgreSQL,
-runs Alembic in a one-off migration container, then starts the API as a non-root
-user on http://127.0.0.1:8000. Do not run the local API and Docker API on the same
-port simultaneously. PostgreSQL ports and the existing development volume remain
-unchanged. `.env` and local caches are excluded from the image; Compose provides
-the container database URL explicitly.
+Requirements: 
 
-The migration service must finish successfully before the API starts. When
-upgrading, check `docker compose logs migrate api` if startup fails. Schema
-changes never delete or rewrite account balances. If existing data violates a
-new constraint, migration validation fails rather than modifying that data.
+1. `Docker`
 
-## Accounts
+That's it. 
+
+### Run everything with Docker
+
+Run the following commands, one step at a time.
 
 ```bash
-curl -i http://127.0.0.1:8000/accounts \
-  -H 'Content-Type: application/json' \
-  -d '{"owner_name":"Alice","opening_balance":"100.00"}'
+1. git clone https://github.com/Roshan310/money-transfer.git
 
-curl http://127.0.0.1:8000/accounts/<id-from-create-response>
+2. cd money-transfer
+
+3. cp .env.example .env
+
+4. docker compose up --build -d --wait api
 ```
 
-Creation returns `201`; lookup returns `200`, or `404` if the account does not
-exist. Both return `id`, `owner_name`, `balance`, and `created_at`. Invalid
-requests return `422`. Errors use FastAPI's standard `detail` field.
+Visit the following URL to test the API.
 
-## Transfer money
+- API: http://127.0.0.1:8000
+- Interactive API docs: http://127.0.0.1:8000/docs
+- OpenAPI schema: http://127.0.0.1:8000/openapi.json
 
-Create two accounts first, then send their IDs and a positive decimal amount:
 
+
+After changing the code, rebuild the API image with
+`docker compose up --build -d --wait api`. Restarting a container alone does not
+pick up code changes because the source is copied into the image.
+
+To stop the running containers:
 ```bash
-curl -i http://127.0.0.1:8000/transfers \
-  -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: transfer-example-1' \
-  -d '{"source_account_id":"<source-uuid>","destination_account_id":"<destination-uuid>","amount":"10.00"}'
+docker compose stop
 ```
 
-`POST /transfers` returns `201` with `id`, `source_account_id`,
-`destination_account_id`, `amount`, and `created_at`. It requires an
-`Idempotency-Key` header: an opaque, nonblank string of at most 128 characters.
-Keys are compared exactly and are globally unique because authentication is
-outside this assignment's scope.
 
-Repeat a successful request with the same key and equivalent payload to receive
-the original `201` response, including the same ID and timestamp, without moving
-money again. Decimal strings such as `"10"` and `"10.00"` are equivalent. Current
-balances are deliberately excluded from the response because they can change
-after a transfer. Successful keys are retained permanently and survive app
-restarts. Use a new key for a new transfer, even if its payload is identical.
 
-Errors use the existing `detail` field:
+## Using the API
 
-| Status | Meaning |
-| --- | --- |
-| `422` | Invalid IDs, missing/invalid key, invalid amount, unknown fields, or identical source and destination |
-| `404` | Source or destination account does not exist |
-| `409` | Insufficient funds, destination balance limit exceeded, or a committed key reused for a different transfer |
+All account and transfer routes use `/api/v1`. The old `/accounts` and
+`/transfers` routes are no longer available. `/docs`, `/redoc`, and
+`/openapi.json` stay at their original URLs.
 
-Failed requests do not reserve their keys. For example, a request rejected for
-insufficient funds can be retried with the same key after funding the account.
-After a network error or uncertain response, retry with the same key to safely
-discover whether the transfer committed. There are no automatic application
-retries or process-local locks.
+| Method | Route | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/v1/accounts` | Create an account |
+| `GET` | `/api/v1/accounts` | List accounts, mainly to find IDs while making a transer (development purpose only) |
+| `GET` | `/api/v1/accounts/{id}` | Get an account and its current balance |
+| `POST` | `/api/v1/transfers` | Transfer money between two accounts |
+| `GET` | `/api/v1/accounts/{id}/transactions` | Get incoming and outgoing transfers |
 
-## Transaction history
+Create two accounts through `/docs`, and use `/api/v1/transfers` route to send money (not real one).
 
-```bash
-curl 'http://127.0.0.1:8000/accounts/<account-uuid>/transactions?limit=20&offset=0'
-```
+I implemented a `GET /api/v1/accounts`, which retrieves all the account with their uuid, to make it easy to test the `/api/v1/transfers` route. THIS IS NOT SAFE FOR PRODUCTION OBVIOUSLY.
 
-Returns `200` with `items`, `limit`, `offset`, and `has_more`. Each item contains
-the public transfer fields above plus `direction`: `debit` for an outgoing
-transfer or `credit` for an incoming transfer. Amounts are always positive decimal
-strings. Idempotency keys are not exposed.
 
-History includes only committed transfers involving the requested account; an
-opening balance is not a transfer. Existing accounts with no history return an
-empty page. Missing accounts return `404`; invalid UUIDs or pagination return
-`422`. Limit defaults to 20 and accepts 1–100; offset defaults to 0 and must be
-nonnegative. `has_more` is determined by fetching one extra record, without a
-separate total-count query.
 
-Results are ordered by `created_at DESC, id DESC`, with the ID breaking timestamp
-ties deterministically. Timestamps represent transaction creation, not guaranteed
-commit order. Offset pagination is deliberately simple for this assignment:
-new transfers may shift entries between page requests, and deep offsets cost
-more than cursor pagination.
+## Decisions and trade-offs
 
-## Error contract
+1. Synchronous design instead of Async.
 
-All errors use a JSON object with a `detail` field. Expected HTTP errors contain
-a string; FastAPI request-validation errors contain the standard list of field
-errors. Unexpected failures return `500` with `{"detail":"Internal server error"}`;
-exception details are logged server-side, not returned to clients. Existing
-status codes and error bodies are preserved. OpenAPI documents success,
-validation, business-error, and server-error responses.
+    I chose synchronous design because async wasn't necessary for the correcteness and reliability. FastAPI can execute synchronous blocking routes in its thread pool, while PostgreSQL handles the actual _transfer_ concurrency through transactions and row locks.
+    Async definitely could improve I/O scalability and at much much higher concurrency but it wouln't change the transactional guarantees, so I prefered simpler implementation. 
 
-## Design decisions
+2. A _transfer_ record and both balance updates share one database transaction.
+  Both account rows are locked with `SELECT ... FOR UPDATE` (uses SQLAlchemy ORM instaed of this raw SQL), always in UUID
+  order. Balance checks happen while those locks are held. This serializes
+  _transfers_ involving the same account and avoids opposite-direction lock
+  ordering problems, at the cost of throughput for busy accounts.
 
-- Accounts have generated UUIDs, a trimmed owner name (1–100 characters), a
-  balance, and a timezone-aware creation timestamp. Owner names need not be unique.
-- All amounts share one currency with two decimal places. Money enters the API
-  as decimal strings, is handled with Python `Decimal`, and is stored in
-  PostgreSQL `NUMERIC(18, 2)`. Responses use strings with two decimal places.
-  Negative, nonfinite, out-of-range, and overprecision inputs are rejected,
-  without rounding. Unknown request fields are rejected.
-- Account creation accepts an optional nonnegative opening balance, defaulting
-  to zero. This is an assignment simplification for initial funding, not a
-  production deposit mechanism.
-- Routers handle HTTP, schemas validate input/output, services own business
-  logic and transaction boundaries, and repositories perform database operations.
-  Synchronous SQLAlchemy uses one session per request with synchronous endpoints.
-- Creation commits before returning success and rolls back on failure.
-  PostgreSQL also enforces nonnegative, finite balances within the supported
-  range. UUID lookup uses the primary-key index, so no additional account index
-  is needed.
-- Transfers use one PostgreSQL transaction for the transfer record and both
-  balance updates. Account rows are locked with `SELECT ... FOR UPDATE` in UUID
-  order, preventing competing transfers from reading stale balances and avoiding
-  deadlocks between opposite-direction transfers. Balances are checked while
-  locks are held. Commit happens before success is returned; failures roll back
-  all three writes.
-- A unique database constraint reserves each successful transfer's idempotency
-  key. `INSERT ... ON CONFLICT DO NOTHING RETURNING` handles simultaneous reuse.
-  The key is reserved after acquiring account locks, so implicit foreign-key
-  locks cannot precede the explicit lock ordering. A losing request fetches the
-  committed result in a separate statement at PostgreSQL's default
-  `READ COMMITTED` isolation. Identical requests replay; changed payloads conflict.
-- The transfers table has foreign keys, a positive finite amount constraint, and
-  a constraint preventing self-transfers. Its primary key and unique idempotency
-  constraint provide indexes for transfer identity and replay queries. Composite
-  indexes on `(source_account_id, created_at, id)` and
-  `(destination_account_id, created_at, id)` support both sides of account history
-  and cover the foreign-key columns without redundant standalone indexes.
-- History stays in the accounts router, schemas, and service. The service checks
-  account existence and determines direction; the transfer repository owns the
-  database query. There is no duplicate ledger or separate transactions package.
-- New history indexes are created concurrently. The finite-balance constraint
-  is introduced as `NOT VALID`, then validated in a separate migration, without
-  silently repairing invalid data. Concurrent DDL is not fully transactional;
-  inspect and remove an invalid index before retrying a failed index migration.
-- Alembic owns schema changes; the app does not create tables at startup.
-  No authentication, account listing, updating, or deletion is included.
 
-## Project structure
+3. Money uses Python `Decimal` and PostgreSQL `NUMERIC(18, 2)`, never floats.
+  Values are validated rather than rouding off silently. This assumes one currency
+  with two decimal places; currency conversion was outside the scope of this task.
 
-```text
-app/
-  main.py                 # Application and router registration
-  config.py               # Environment-based settings
-  database.py             # Engine, ORM base, session dependency
-  money.py                # Shared Decimal validation and formatting
-  errors.py               # Shared error schema and unexpected-error handler
-  accounts/
-    router.py             # Account and transaction-history HTTP endpoints
-    schemas.py            # Request and response models
-    models.py             # ORM account model
-    service.py            # Business logic and transactions
-    repository.py         # Database operations
-  transfers/
-    router.py             # Transfer endpoint and header validation
-    schemas.py            # Transfer request and response models
-    models.py             # ORM transfer model and constraints
-    service.py            # Atomic transfer and replay logic
-    repository.py         # Transfer lookup, insertion, and history queries
-    errors.py             # Domain errors, without HTTP dependencies
-alembic/                  # Migration configuration and revisions
-tests/                    # Schema unit tests and PostgreSQL integration tests
-```
+4. Idempotency is stored in PostgreSQL with a unique constraint, not in memory.
+  Competing requests use `INSERT ... ON CONFLICT` to resolve key reuse. Keys
+  are reserved after locking accounts and kept permanently for successful
+  _transfers_. They are globally scoped because the API has no authentication.
 
-## Verify
+5. Database constraints protect balances, transfer amounts, account references,
+  and key uniqueness. Separate source and destination history indexes support
+  queries for either side of a transfer. Alembic manages schema changes and the
+  app does not create tables on startup.
+6. Transaction history (in `/api/v1/accounts/{account_id}/transactions`) uses offset pagination because it is simple to use and sufficient
+  here. New _transfers_ can shift pages between requests, and large offsets get
+  slower. Account listing is a testing convenience and is not paginated.
 
-```bash
-uv run pytest
-uv run ruff check .
-uv run ruff format --check .
-```
 
-Integration tests apply Alembic migrations to `TEST_DATABASE_URL`, then isolate
-each test with a rolled-back outer transaction and savepoints. The database
-must be dedicated to tests, have a name ending in `_test`, and differ from the
-development database. Tests do not use SQLite or drop existing tables.
-Transfer and concurrency tests use real commits and fresh sessions per request,
-then delete only the records they created. Database statement and lock timeouts
-bound test waits; these settings are confined to the test engine.
 
-The concurrency tests start requests behind a barrier and hold account locks
-until PostgreSQL reports that every request is waiting. They cover competing
-withdrawals, simultaneous credits, opposite-direction transfers, duplicate keys,
-and changed payloads sharing a key, including disjoint account pairs. Assertions
-check balances, conserved money, and persisted transfer counts. An injected
-failure after balance writes verifies rollback through fresh database connections.
+## Priorities and what I left out
 
-Schema tests can run without PostgreSQL:
+I focused mainly on three pillars of robust payment system:
+  1. Atomic transfers
+  2. Safe concurrent requests
+  3. Persistent Idempotency
 
-```bash
-uv run pytest -m 'not integration'
-```
+I prioritized correctness, consistency and clear engineering decisions over unnecessary features, as mentioned. I have also made sure that pagination, database migration, proper validation, error handling, automated testing are robust, along with docker setup.
 
-To generate future migrations after modifying ORM models:
 
-```bash
-uv run alembic revision --autogenerate -m "describe the schema change"
-uv run alembic upgrade head
-```
+I thought about adding multiple features for a production grade money transfer system, like user authentication/authorization, rate limiting, caching, etc. but these didn't make any sense as it would only add more code to review without adding any real value to core task. 
 
-Review generated migrations before applying them. Stop local databases with
-`docker compose stop` when finished; the development database uses a named volume.
 
-## Assignment coverage
+I left out authentication, account editing and deletion, external payments, and
+multi-currency support. Those need their own rules and security
+decisions; adding them here would distract from the transfer behavior. Apart
+from the account-listing helper, there are no stretch features.
 
-| Priority | Implemented |
-| --- | --- |
-| P0 | All four endpoints; atomic transfers; ordered database locks; validation and status codes; Decimal money; automated concurrency tests |
-| P1 | Persistent idempotency; database constraints and indexes; JSON errors; bounded history pagination; interactive OpenAPI documentation |
-| P2 | Separate HTTP, schemas, business logic, and data access; Alembic migrations; API/PostgreSQL Docker Compose; unit and PostgreSQL integration tests |
+## Features to add with more time in hand
 
-Tests additionally cover incoming/outgoing history, timestamp ties, pagination,
-failed-transfer exclusion, replay deduplication, sanitized server errors,
-database rejection of `NaN`, and migration preservation of existing records.
-Migration upgrade/downgrade tests use a private temporary schema, never the
-development schema. Stretch features are intentionally excluded to keep the
-assignment focused on correctness and maintainability.
+TL;DR
+
+1. Add cursor based pagination instead of limit-offset.
+2. User authentication/authorization.
+3. Double entry ledger to record debit and credit entries for every _transfer_.
+4. Rate limiting on write endpoints to protect API from excessive abuse.
+5. Async database access.
+
+This is not  a _safe-to-expose_ public banking API. There is no authentication
+or account ownership check: anyone who can reach it can read accounts and submit
+transfers. 
+
+Offset pagination is simple, but it becomes less efficient on large transaction tables and can produce inconsistent pages when new transactions are inserted between requests. Cursor-based pagination would use something like (created_at, id) as the cursor, giving more stable and scalable transaction-history pagination.
+
+
+I would add User entity, so that every account is linked to a unique user. For now, _account_ is an individual entity with just a name and balance.
+
+Instead of only updating account balances, every transfer could also create two immutable ledger entries, a debit for the source account and a credit for the destination account. This provides a much stronger audit trail, because every movement of money is explicitly recorded.
+
+Endpoints such as POST /api/v1/transfers could be rate-limited to protect the service from abuse, accidental request floods, or excessive traffic. In a production level system, this would typically use a shared store such as Redis rather than process-local counters.
+
+
+i have used synchronous SQLAlchemy because it keeps the transaction logic simpler and is sufficient for the scope of the assignment. If profiling showed that the service needed to handle much higher I/O concurrency, the persistence layer could be migrated to SQLAlchemy AsyncSession with an async PostgreSQL driver. This would improve I/O scalability, but it would not replace the database transactions, row locks, and constraints that provide correctness.
