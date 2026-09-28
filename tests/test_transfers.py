@@ -14,7 +14,7 @@ from app.transfers.models import Transfer
 from tests.helpers import balances, payload, transfer_count
 
 pytestmark = pytest.mark.integration
- 
+
 
 @pytest.mark.parametrize("amount", ["0.10", "100.00"])
 def test_transfer_commits_and_persists(
@@ -25,7 +25,7 @@ def test_transfer_commits_and_persists(
 ) -> None:
     source, destination = account_factory("100.00", "0.00")
     response = transfer_client.post(
-        "/transfers",
+        "/api/v1/transfers",
         json=payload(source, destination, amount),
         headers={"Idempotency-Key": str(uuid4())},
     )
@@ -50,9 +50,9 @@ def test_transfer_commits_and_persists(
         Decimal("100.00") - Decimal(amount),
         Decimal(amount),
     ]
-    assert transfer_client.get(f"/accounts/{source}").json()["balance"] == format(
-        Decimal("100.00") - Decimal(amount), ".2f"
-    )
+    assert transfer_client.get(f"/api/v1/accounts/{source}").json()[
+        "balance"
+    ] == format(Decimal("100.00") - Decimal(amount), ".2f")
 
 
 @pytest.mark.parametrize("key", [None, "", "   ", "x" * 129])
@@ -64,7 +64,7 @@ def test_idempotency_header_required_and_validated(
 ) -> None:
     source, destination = account_factory("100", "0")
     response = transfer_client.post(
-        "/transfers",
+        "/api/v1/transfers",
         json=payload(source, destination),
         headers={} if key is None else {"Idempotency-Key": key},
     )
@@ -98,7 +98,7 @@ def test_invalid_transfer_request(
 ) -> None:
     source, destination = account_factory("100", "0")
     response = transfer_client.post(
-        "/transfers",
+        "/api/v1/transfers",
         json=payload(source, destination) | changes,
         headers={"Idempotency-Key": str(uuid4())},
     )
@@ -114,7 +114,7 @@ def test_invalid_transfer_request(
 def test_self_transfer_is_rejected(transfer_client: TestClient) -> None:
     account_id = uuid4()
     response = transfer_client.post(
-        "/transfers",
+        "/api/v1/transfers",
         json=payload(account_id, account_id),
         headers={"Idempotency-Key": str(uuid4())},
     )
@@ -131,7 +131,7 @@ def test_missing_account(
     existing = account_factory("100")[0]
     source, destination = (uuid4(), existing) if missing_source else (existing, uuid4())
     response = transfer_client.post(
-        "/transfers",
+        "/api/v1/transfers",
         json=payload(source, destination),
         headers={"Idempotency-Key": str(uuid4())},
     )
@@ -162,7 +162,7 @@ def test_business_failure_is_atomic(
 ) -> None:
     ids = account_factory(source_balance, destination_balance)
     response = transfer_client.post(
-        "/transfers",
+        "/api/v1/transfers",
         json=payload(*ids, amount),
         headers={"Idempotency-Key": str(uuid4())},
     )
@@ -189,7 +189,7 @@ def test_failure_after_balance_flush_rolls_everything_back(
     event.listen(Session, "after_flush_postexec", fail_after_flush)
     try:
         response = transfer_client.post(
-            "/transfers", json=payload(*ids), headers={"Idempotency-Key": key}
+            "/api/v1/transfers", json=payload(*ids), headers={"Idempotency-Key": key}
         )
     finally:
         event.remove(Session, "after_flush_postexec", fail_after_flush)
@@ -198,9 +198,12 @@ def test_failure_after_balance_flush_rolls_everything_back(
     assert response.json() == {"detail": "Internal server error"}
     assert balances(test_engine, ids) == [Decimal("100"), Decimal("0")]
     assert transfer_count(test_engine, ids[0]) == 0
-    assert transfer_client.get(f"/accounts/{ids[0]}/transactions").json()["items"] == []
+    assert (
+        transfer_client.get(f"/api/v1/accounts/{ids[0]}/transactions").json()["items"]
+        == []
+    )
     retried = transfer_client.post(
-        "/transfers", json=payload(*ids), headers={"Idempotency-Key": key}
+        "/api/v1/transfers", json=payload(*ids), headers={"Idempotency-Key": key}
     )
     assert retried.status_code == 201
     assert balances(test_engine, ids) == [Decimal("90"), Decimal("10")]
@@ -214,19 +217,19 @@ def test_replay_returns_original_result_after_balances_change(
     source, destination = account_factory("10", "0")
     key = str(uuid4())
     first = transfer_client.post(
-        "/transfers",
+        "/api/v1/transfers",
         json=payload(source, destination, "10"),
         headers={"Idempotency-Key": key},
     )
     assert first.status_code == 201
     reverse = transfer_client.post(
-        "/transfers",
+        "/api/v1/transfers",
         json=payload(destination, source, "10"),
         headers={"Idempotency-Key": str(uuid4())},
     )
     assert reverse.status_code == 201
     second = transfer_client.post(
-        "/transfers",
+        "/api/v1/transfers",
         json=payload(source, destination, "10.00"),
         headers={"Idempotency-Key": key},
     )
@@ -245,7 +248,7 @@ def test_replay_when_source_is_now_empty(
     key = str(uuid4())
     responses = [
         transfer_client.post(
-            "/transfers", json=payload(*ids), headers={"Idempotency-Key": key}
+            "/api/v1/transfers", json=payload(*ids), headers={"Idempotency-Key": key}
         )
         for _ in range(2)
     ]
@@ -269,7 +272,7 @@ def test_key_reuse_with_changed_payload_conflicts(
     original = payload(source, destination)
     assert (
         transfer_client.post(
-            "/transfers", json=original, headers={"Idempotency-Key": key}
+            "/api/v1/transfers", json=original, headers={"Idempotency-Key": key}
         ).status_code
         == 201
     )
@@ -277,7 +280,7 @@ def test_key_reuse_with_changed_payload_conflicts(
         changed_field: "11" if changed_field == "amount" else str(other)
     }
     response = transfer_client.post(
-        "/transfers", json=changed, headers={"Idempotency-Key": key}
+        "/api/v1/transfers", json=changed, headers={"Idempotency-Key": key}
     )
     assert response.status_code == 409
     assert response.json() == {
@@ -298,19 +301,19 @@ def test_failed_key_can_be_retried_after_funding(
     source, destination, donor = account_factory("0", "0", "10")
     key = str(uuid4())
     first = transfer_client.post(
-        "/transfers",
+        "/api/v1/transfers",
         json=payload(source, destination),
         headers={"Idempotency-Key": key},
     )
     assert first.status_code == 409
     funding = transfer_client.post(
-        "/transfers",
+        "/api/v1/transfers",
         json=payload(donor, source),
         headers={"Idempotency-Key": str(uuid4())},
     )
     assert funding.status_code == 201
     retry = transfer_client.post(
-        "/transfers",
+        "/api/v1/transfers",
         json=payload(source, destination),
         headers={"Idempotency-Key": key},
     )

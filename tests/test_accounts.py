@@ -30,7 +30,7 @@ def test_creation_commits_before_response(test_engine: Engine) -> None:
     try:
         with TestClient(app) as client:
             response = client.post(
-                "/accounts",
+                "/api/v1/accounts",
                 json={"owner_name": "Commit test", "opening_balance": "0.10"},
             )
             assert response.status_code == 201
@@ -40,7 +40,7 @@ def test_creation_commits_before_response(test_engine: Engine) -> None:
                 account = reader.get(Account, account_id)
                 assert account is not None
                 assert account.balance == Decimal("0.10")
-            assert client.get(f"/accounts/{account_id}").status_code == 200
+            assert client.get(f"/api/v1/accounts/{account_id}").status_code == 200
     finally:
         if account_id is not None:
             with test_engine.begin() as connection:
@@ -52,7 +52,7 @@ def test_create_and_get_account(
     client: TestClient, session: Session, balance: str
 ) -> None:
     response = client.post(
-        "/accounts", json={"owner_name": "  Alice  ", "opening_balance": balance}
+        "/api/v1/accounts", json={"owner_name": "  Alice  ", "opening_balance": balance}
     )
     assert response.status_code == 201
     account = response.json()
@@ -65,14 +65,32 @@ def test_create_and_get_account(
     assert stored is not None
     assert stored.balance == Decimal(balance)
 
-    fetched = client.get(f"/accounts/{account_id}")
+    fetched = client.get(f"/api/v1/accounts/{account_id}")
     assert fetched.status_code == 200
     assert fetched.json() == account
 
 
+def test_list_accounts(client: TestClient) -> None:
+    created_accounts = [
+        client.post(
+            "/api/v1/accounts",
+            json={"owner_name": name, "opening_balance": balance},
+        )
+        for name, balance in [("Alice", "10.00"), ("Bob", "20.00")]
+    ]
+    assert all(response.status_code == 201 for response in created_accounts)
+
+    response = client.get("/api/v1/accounts")
+    assert response.status_code == 200
+    accounts = {account["id"]: account for account in response.json()}
+    for created in created_accounts:
+        account = created.json()
+        assert accounts[account["id"]] == account
+
+
 def test_default_balance_and_distinct_ids(client: TestClient) -> None:
-    first = client.post("/accounts", json={"owner_name": "Alice"})
-    second = client.post("/accounts", json={"owner_name": "Alice"})
+    first = client.post("/api/v1/accounts", json={"owner_name": "Alice"})
+    second = client.post("/api/v1/accounts", json={"owner_name": "Alice"})
     assert first.status_code == second.status_code == 201
     assert first.json()["balance"] == second.json()["balance"] == "0.00"
     assert first.json()["id"] != second.json()["id"]
@@ -93,19 +111,19 @@ def test_default_balance_and_distinct_ids(client: TestClient) -> None:
     ],
 )
 def test_invalid_create_request(client: TestClient, payload: dict) -> None:
-    response = client.post("/accounts", json=payload)
+    response = client.post("/api/v1/accounts", json=payload)
     assert response.status_code == 422
     assert "detail" in response.json()
 
 
 def test_missing_account(client: TestClient) -> None:
-    response = client.get(f"/accounts/{uuid4()}")
+    response = client.get(f"/api/v1/accounts/{uuid4()}")
     assert response.status_code == 404
     assert response.json() == {"detail": "Account not found"}
 
 
 def test_invalid_account_id(client: TestClient) -> None:
-    assert client.get("/accounts/not-a-uuid").status_code == 422
+    assert client.get("/api/v1/accounts/not-a-uuid").status_code == 422
 
 
 def test_database_rejects_negative_balance(session: Session) -> None:

@@ -18,14 +18,14 @@ def test_history_includes_both_directions_and_excludes_other_accounts(
     alice, bob, charlie, other = account_factory("100", "100", "100", "0")
     responses = [
         transfer_client.post(
-            "/transfers",
+            "/api/v1/transfers",
             json=payload(source, destination, "0.10"),
             headers={"Idempotency-Key": str(uuid4())},
         )
         for source, destination in [(alice, bob), (charlie, alice), (bob, other)]
     ]
     assert all(response.status_code == 201 for response in responses)
-    response = transfer_client.get(f"/accounts/{alice}/transactions")
+    response = transfer_client.get(f"/api/v1/accounts/{alice}/transactions")
     assert response.status_code == 200
     page = response.json()
     assert page == {
@@ -46,7 +46,7 @@ def test_history_empty_and_offset_beyond_end(
     account = account_factory("100")[0]
     for offset in (0, 50):
         response = transfer_client.get(
-            f"/accounts/{account}/transactions", params={"offset": offset}
+            f"/api/v1/accounts/{account}/transactions", params={"offset": offset}
         )
         assert response.status_code == 200
         assert response.json() == {
@@ -64,7 +64,7 @@ def test_history_pagination_and_deterministic_timestamp_ties(
     transfers = []
     for _ in range(5):
         response = transfer_client.post(
-            "/transfers",
+            "/api/v1/transfers",
             json=payload(source, destination, "1"),
             headers={"Idempotency-Key": str(uuid4())},
         )
@@ -95,7 +95,8 @@ def test_history_pagination_and_deterministic_timestamp_ties(
         (6, 0, False),
     ]:
         response = transfer_client.get(
-            f"/accounts/{source}/transactions", params={"limit": 2, "offset": offset}
+            f"/api/v1/accounts/{source}/transactions",
+            params={"limit": 2, "offset": offset},
         )
         assert response.status_code == 200
         page = response.json()
@@ -105,12 +106,12 @@ def test_history_pagination_and_deterministic_timestamp_ties(
         collected.extend(item["id"] for item in page["items"])
     assert collected == expected
     exact = transfer_client.get(
-        f"/accounts/{source}/transactions", params={"limit": 5}
+        f"/api/v1/accounts/{source}/transactions", params={"limit": 5}
     ).json()
     assert len(exact["items"]) == 5 and exact["has_more"] is False
     assert (
         transfer_client.get(
-            f"/accounts/{source}/transactions", params={"limit": 100}
+            f"/api/v1/accounts/{source}/transactions", params={"limit": 100}
         ).status_code
         == 200
     )
@@ -132,16 +133,20 @@ def test_history_rejects_invalid_pagination(
     transfer_client: TestClient, account_factory: Callable, params: dict
 ) -> None:
     account = account_factory("0")[0]
-    response = transfer_client.get(f"/accounts/{account}/transactions", params=params)
+    response = transfer_client.get(
+        f"/api/v1/accounts/{account}/transactions", params=params
+    )
     assert response.status_code == 422
     assert isinstance(response.json()["detail"], list)
 
 
 def test_history_missing_and_invalid_account(transfer_client: TestClient) -> None:
-    response = transfer_client.get(f"/accounts/{uuid4()}/transactions")
+    response = transfer_client.get(f"/api/v1/accounts/{uuid4()}/transactions")
     assert response.status_code == 404
     assert response.json() == {"detail": "Account not found"}
-    assert transfer_client.get("/accounts/invalid/transactions").status_code == 422
+    assert (
+        transfer_client.get("/api/v1/accounts/invalid/transactions").status_code == 422
+    )
 
 
 def test_history_excludes_failures_and_does_not_duplicate_replays(
@@ -150,22 +155,22 @@ def test_history_excludes_failures_and_does_not_duplicate_replays(
     source, destination = account_factory("10", "0")
     key = str(uuid4())
     first = transfer_client.post(
-        "/transfers",
+        "/api/v1/transfers",
         json=payload(source, destination),
         headers={"Idempotency-Key": key},
     )
     replay = transfer_client.post(
-        "/transfers",
+        "/api/v1/transfers",
         json=payload(source, destination),
         headers={"Idempotency-Key": key},
     )
     assert first.status_code == replay.status_code == 201
     failed = transfer_client.post(
-        "/transfers",
+        "/api/v1/transfers",
         json=payload(source, destination),
         headers={"Idempotency-Key": str(uuid4())},
     )
     assert failed.status_code == 409
-    page = transfer_client.get(f"/accounts/{source}/transactions").json()
+    page = transfer_client.get(f"/api/v1/accounts/{source}/transactions").json()
     assert page["items"] == [{**first.json(), "direction": "debit"}]
     assert page["has_more"] is False

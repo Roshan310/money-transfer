@@ -25,7 +25,9 @@ def post_overlapping(
 
     def post(body: dict, key: str):
         barrier.wait(timeout=5)
-        return client.post("/transfers", json=body, headers={"Idempotency-Key": key})
+        return client.post(
+            "/api/v1/transfers", json=body, headers={"Idempotency-Key": key}
+        )
 
     with ThreadPoolExecutor(max_workers=len(requests)) as executor:
         with engine.begin() as blocker:
