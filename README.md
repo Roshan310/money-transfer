@@ -57,9 +57,7 @@ docker compose stop
 
 ## Using the API
 
-All account and transfer routes use `/api/v1`. The old `/accounts` and
-`/transfers` routes are no longer available. `/docs`, `/redoc`, and
-`/openapi.json` stay at their original URLs.
+All account and transfer routes use `/api/v1`.
 
 | Method | Route | Purpose |
 | --- | --- | --- |
