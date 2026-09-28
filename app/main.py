@@ -1,8 +1,7 @@
 from fastapi import FastAPI
 
-from app.accounts.router import router as accounts_router
+from app.api import router as api_router
 from app.errors import ErrorResponse, unexpected_error_handler
-from app.transfers.router import router as transfers_router
 
 
 def create_app() -> FastAPI:
@@ -13,8 +12,7 @@ def create_app() -> FastAPI:
         responses={500: {"model": ErrorResponse, "description": "Unexpected error"}},
     )
     app.add_exception_handler(Exception, unexpected_error_handler)
-    app.include_router(accounts_router)
-    app.include_router(transfers_router)
+    app.include_router(api_router)
     return app
 
 
@@ -24,5 +22,5 @@ app = create_app()
 @app.get("/")
 def status():
     return {
-        "message": "Welcome to the Money Transfer System! Everthing is working fine."
+        "message": "Welcome to the Money Transfer System! Everything is working fine."
     }

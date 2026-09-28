@@ -10,11 +10,7 @@ from app.accounts.schemas import (
     AccountTransactionRead,
 )
 from app.transfers import repository as transfers_repository
-
-
-class AccountNotFoundError(Exception):
-    pass
-
+from app.accounts.errors import AccountNotFoundError
 
 def create_account(session: Session, data: AccountCreate) -> Account:
     with session.begin():
